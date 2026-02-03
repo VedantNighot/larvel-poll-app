@@ -8,18 +8,37 @@ use App\Models\PollOption;
 
 class AdminController extends Controller
 {
-    // ...
+    public function index()
+    {
+        $polls = Poll::latest()->get();
+        return view('admin', compact('polls')); 
+    }
+
+    public function create()
+    {
+         return view('admin'); 
+    }
 
     public function store(Request $request)
     {
-        // ...
-        foreach ($request->options as $optionText) {
-            PollOption::create([
-                'poll_id' => $poll->id,
-                'option_text' => $optionText
-            ]);
+        // Simple create for runtime
+        $poll = Poll::create([
+            'question' => $request->question,
+            'is_active' => true
+        ]);
+
+        if($request->options && is_array($request->options)) {
+            foreach ($request->options as $optionText) {
+                if(trim($optionText)) {
+                    PollOption::create([
+                        'poll_id' => $poll->id,
+                        'option_text' => $optionText
+                    ]);
+                }
+            }
         }
-        // ...
+
+        return redirect()->route('admin.index');
     }
 
     // Module 4: View IPs for a poll
