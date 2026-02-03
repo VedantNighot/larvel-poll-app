@@ -1,0 +1,4 @@
+#!/usr/bin/env php
+<?php
+
+echo "This is a runtime-only deployment. Artisan commands are not available without Composer.";
