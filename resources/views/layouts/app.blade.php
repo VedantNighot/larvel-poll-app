@@ -21,7 +21,9 @@
             <a class="navbar-brand" href="#">LivePoll</a>
             <div class="d-flex">
                 @auth
-                    <a href="{{ route('admin.polls.create') }}" class="btn btn-outline-light btn-sm me-2">Create Poll</a>
+                    @if(Auth::id() == 1)
+                        <a href="{{ route('admin.polls.create') }}" class="btn btn-outline-light btn-sm me-2">Create Poll</a>
+                    @endif
                     <span class="text-white align-self-center">User: {{ Auth::id() }}</span>
                 @else
                     <a href="{{ route('login') }}" class="btn btn-primary btn-sm">Login</a>

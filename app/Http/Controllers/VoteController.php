@@ -14,6 +14,14 @@ class VoteController extends Controller
             'option_id' => 'required|exists:poll_options,id'
         ]);
 
+        // Restriction: Admin (User 1) cannot vote
+        if (\Illuminate\Support\Facades\Auth::id() == 1) {
+             return response()->json([
+                'status' => 'error',
+                'message' => 'Admins cannot vote.'
+            ], 403);
+        }
+
         $ip = $request->ip();
 
         // 1. Check if IP has an ACTIVE vote

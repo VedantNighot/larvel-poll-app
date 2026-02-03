@@ -20,6 +20,11 @@ class AuthController extends Controller
 
         if ($email === 'admin@example.com' && $password === 'admin') {
             Auth::loginUsingId(1); // Log in as Admin 1
+            return redirect()->route('admin.index');
+        }
+
+        if ($email === 'user@example.com' && $password === 'user') {
+            Auth::loginUsingId(2); // Log in as User 2
             return redirect()->route('polls.index');
         }
 
@@ -29,5 +34,9 @@ class AuthController extends Controller
     public function logout() {
         Auth::logout();
         return redirect()->route('login');
+    }
+
+    public function redirectHome() {
+        return redirect('/login');
     }
 }

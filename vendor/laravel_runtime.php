@@ -22,6 +22,11 @@ namespace Illuminate\Http {
             echo json_encode($data);
             exit;
         }
+        public function send() {
+            // If this is called, it might be an empty response or something.
+            // Just exit to be safe.
+            exit;
+        }
     }
 }
 
@@ -30,7 +35,10 @@ namespace Illuminate\Routing {
         protected $targetUrl;
         public function route($name) { 
             $url = '/';
-            if(strpos($name, 'index') !== false) $url = '/polls';
+            // Specific overrides
+            if($name == 'admin.index') $url = '/admin';
+            else if(strpos($name, 'index') !== false) $url = '/polls';
+            
             if(strpos($name, 'login') !== false) $url = '/login';
             $this->targetUrl = $url;
             return $this;
@@ -48,11 +56,14 @@ namespace Illuminate\Routing {
             else $_SESSION[$key] = $value;
             return $this;
         }
-        public function __destruct() {
+        public function send() {
             if ($this->targetUrl && !headers_sent()) {
                 header("Location: " . $this->targetUrl);
                 exit;
             }
+        }
+        public function __destruct() {
+            $this->send();
         }
     }
     class Controller {} // Base Controller for Illuminate
@@ -129,16 +140,49 @@ namespace Illuminate\Support\Facades {
 }
 
 namespace Illuminate\Database\Eloquent {
+    #[\AllowDynamicProperties]
     class Model {
         protected $fillable = [];
+
+        public function __get($key) {
+            // Magic method to resolve relationships (e.g., $poll->options)
+            if (method_exists($this, $key)) {
+                $relation = $this->$key();
+                // If it returns a Builder/Relation, get the results
+                if (is_object($relation) && method_exists($relation, 'get')) {
+                    return $relation->get();
+                }
+                return $relation;
+            }
+            return null;
+        }
+
         public static function create($data) { return (new static)->saveData($data); }
         public static function where($col, $val) { return new Builder(static::class, $col, $val); }
-        public static function with($rel) { return new Builder(static::class); }
+        public static function with($rel) { return new Builder(static::class); } // Stub for "with", handled lazily via dynamic prop
         public static function latest() { return new Builder(static::class); }
         public static function findOrFail($id) { return (new Builder(static::class))->find($id); }
+        
+        public function hasMany($related) {
+            // Simple hasMany simulation
+            // Guess foreign key: current class name (lowercase) + _id
+            $foreignKey = strtolower(basename(str_replace('\\', '/', static::class))) . '_id';
+            return $related::where($foreignKey, $this->id ?? 0);
+        }
+
+        public function belongsTo($related) {
+            // Simple belongsTo simulation
+            $instance = new $related;
+            $foreignKey = strtolower(basename(str_replace('\\', '/', $related))) . '_id';
+            return $instance->where('id', $this->$foreignKey)->first();
+        }
+
         public function saveData($data) {
             $db = \Illuminate\Support\Facades\DB::pdo();
-            $table = strtolower(basename(str_replace('\\', '/', static::class))) . 's';
+            // Fix table name inference for CamelCase models (PollOption -> poll_options)
+            $className = basename(str_replace('\\', '/', static::class));
+            $table = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className)) . 's';
+            
             if(isset($this->table)) $table = $this->table;
             $cols = implode(',', array_keys($data));
             $vals = implode(',', array_fill(0, count($data), '?'));
@@ -150,27 +194,88 @@ namespace Illuminate\Database\Eloquent {
             $obj->id = $id;
             return $obj;
         }
+
+        public function save() {
+            if(isset($this->id)) {
+                // UPDATE logic
+                $className = basename(str_replace('\\', '/', static::class));
+                $table = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className)) . 's';
+                
+                $vars = get_object_vars($this);
+                $sets = [];
+                $params = [];
+                foreach($vars as $k => $v) {
+                    if($k == 'id' || $k == 'table') continue;
+                    if(is_object($v) || is_array($v)) continue; // Skip relations
+                    
+                    $sets[] = "$k = ?";
+                    $params[] = is_bool($v) ? (int)$v : $v;
+                }
+                
+                if(empty($sets)) return true;
+                
+                $sql = "UPDATE $table SET " . implode(', ', $sets) . " WHERE id = ?";
+                $params[] = $this->id;
+                
+                $db = \Illuminate\Support\Facades\DB::pdo();
+                $stmt = $db->prepare($sql);
+                return $stmt->execute($params);
+            }
+            // If no ID, ideally we call saveData, but simplify for now
+            return false;
+        }
     }
     class Builder {
-        protected $model, $where = [];
+        protected $model, $where = [], $orders = [];
         public function __construct($model, $col=null, $val=null) { $this->model = $model; if($col) $this->where[$col] = $val; }
         public function where($col, $val) { $this->where[$col] = $val; return $this; }
-        public function latest() { return $this; }
+        public function latest() { $this->orders[] = 'id DESC'; return $this; }
+        public function orderBy($col, $dir = 'asc') { $this->orders[] = "$col $dir"; return $this; }
+        
         public function get() { 
-            $table = strtolower(basename(str_replace('\\', '/', $this->model))) . 's';
-            if(basename(str_replace('\\', '/', $this->model)) == 'PollOption') $table = 'poll_options';
+            // Fix table name inference
+            $className = basename(str_replace('\\', '/', $this->model));
+            $table = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className)) . 's';
+            
             $sql = "SELECT * FROM $table";
             $params = [];
             if(!empty($this->where)) {
                 $clauses = []; foreach($this->where as $k=>$v) { $clauses[] = "$k = ?"; $params[] = $v; }
                 $sql .= " WHERE " . implode(' AND ', $clauses);
             }
+            if(!empty($this->orders)) {
+                $sql .= " ORDER BY " . implode(', ', $this->orders);
+            }
+            
             $db = \Illuminate\Support\Facades\DB::pdo();
             $stmt = $db->prepare($sql);
             $stmt->execute($params);
             $rows = $stmt->fetchAll(\PDO::FETCH_CLASS, $this->model);
             return new \Illuminate\Support\Collection($rows);
         }
+        
+        public function delete() {
+            // Fix table name inference
+            $className = basename(str_replace('\\', '/', $this->model));
+            $table = strtolower(preg_replace('/(?<!^)[A-Z]/', '_$0', $className)) . 's';
+            
+            $sql = "DELETE FROM $table";
+            $params = [];
+            if(!empty($this->where)) {
+                $clauses = []; foreach($this->where as $k=>$v) { $clauses[] = "$k = ?"; $params[] = $v; }
+                $sql .= " WHERE " . implode(' AND ', $clauses);
+            }
+            
+            $db = \Illuminate\Support\Facades\DB::pdo();
+            $stmt = $db->prepare($sql);
+            return $stmt->execute($params);
+        }
+
+        public function with($relations) {
+            // Mock eager loading stub to prevent crash
+            return $this; 
+        }
+
         public function first() { $res = $this->get(); return $res[0] ?? null; }
         public function find($id) { $this->where['id'] = $id; return $this->first(); }
         public function withCount($rel) { return $this; }
@@ -187,6 +292,9 @@ namespace Illuminate\Database\Eloquent\Factories {
 namespace Illuminate\Support {
     class Collection extends \ArrayObject {
         public function map($cb) { return array_map($cb, (array)$this); }
+        public function toArray() { return (array)$this; }
+        public function all() { return (array)$this; }
+        public function count(): int { return count((array)$this); }
     }
 }
 

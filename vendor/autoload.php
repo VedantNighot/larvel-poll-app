@@ -14,20 +14,78 @@ spl_autoload_register(function ($class) {
 require_once __DIR__ . '/laravel_runtime.php';
 
 // 3. Load Helpers
+if (!function_exists('e')) {
+    function e($value) {
+        return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8', false);
+    }
+}
+
 if (!function_exists('view')) {
     function view($view, $data = []) {
-        extract($data);
+        // 1. Resolve Path
         $path = __DIR__ . '/../resources/views/' . str_replace('.', '/', $view) . '.blade.php';
         if (!file_exists($path)) {
-            // Fallback for flat structure refactor if view folder structure varies
-            $path = __DIR__ . '/../resources/views/' . basename(str_replace('.', '/', $view)) . '.blade.php';
+             $path = __DIR__ . '/../resources/views/' . basename(str_replace('.', '/', $view)) . '.blade.php';
+             if (!file_exists($path)) return "View [$view] not found.";
         }
-        if (file_exists($path)) {
-            ob_start();
-            include $path;
-            return ob_get_clean();
+
+        // 2. Read Content
+        $content = file_get_contents($path);
+
+        // 3. Handle Layouts (@extends)
+        // Simple regex to find @extends('layout')
+        if (preg_match('/@extends\([\'"]([^\'"]+)[\'"]\)/', $content, $matches)) {
+            $layoutName = $matches[1];
+            $layoutPath = __DIR__ . '/../resources/views/' . str_replace('.', '/', $layoutName) . '.blade.php';
+            
+            if (file_exists($layoutPath)) {
+                $layoutContent = file_get_contents($layoutPath);
+                
+                // Extract Sections from Child
+                preg_match_all('/@section\([\'"]([^\'"]+)[\'"]\)(.*?)@endsection/s', $content, $sectionMatches, PREG_SET_ORDER);
+                
+                $sections = [];
+                foreach ($sectionMatches as $sm) {
+                    $sections[$sm[1]] = $sm[2];
+                }
+                
+                // Replace @yield in Layout
+                $content = preg_replace_callback('/@yield\([\'"]([^\'"]+)[\'"]\)/', function($m) use ($sections) {
+                    return $sections[$m[1]] ?? '';
+                }, $layoutContent);
+            }
         }
-        return "View [$view] not found.";
+
+        // 4. Compile Blade Syntax
+        // Note: Using greedy ((.+)) for parenthesized expressions to handle simple nested calls like count($x)
+        // This assumes one directive per line or distinct separation, which is typical.
+        $replacements = [
+            '/\{\{\s*(.+?)\s*\}\}/' => '<?= e($1) ?>',           
+            '/@if\s*\((.+)\)/' => '<?php if($1): ?>',             
+            '/@elseif\s*\((.+)\)/' => '<?php elseif($1): ?>',    
+            '/@else/' => '<?php else: ?>',                        
+            '/@endif/' => '<?php endif; ?>',                      
+            '/@foreach\s*\((.+)\)/' => '<?php foreach($1): ?>',  
+            '/@endforeach/' => '<?php endforeach; ?>',            
+            '/@auth/' => '<?php if(\Illuminate\Support\Facades\Auth::check()): ?>',
+            '/@endauth/' => '<?php endif; ?>',
+            '/@guest/' => '<?php if(!\Illuminate\Support\Facades\Auth::check()): ?>',
+            '/@endguest/' => '<?php endif; ?>',
+             // Minimal error directive support assuming $errors might not exist, checking session
+            '/@error\s*\([\'"](.+?)[\'"]\)/' => '<?php if(session("errors") && session("errors")->has("$1")): ?>', 
+            '/@enderror/' => '<?php endif; ?>',
+            '/@csrf/' => '<?= csrf_field() ?>',                   
+            '/@php/' => '<?php',                                  
+            '/@endphp/' => '?>',                                  
+        ];
+
+        $content = preg_replace(array_keys($replacements), array_values($replacements), $content);
+
+        // 5. Render
+        extract($data);
+        ob_start();
+        eval('?>' . $content);
+        return ob_get_clean();
     }
 }
 if (!function_exists('response')) {
@@ -46,6 +104,24 @@ if (!function_exists('route')) {
         if($name == 'login') return '/login';
         if($name == 'polls.index') return '/polls';
         if($name == 'admin.index') return '/admin';
+        if($name == 'admin.polls.store') return '/admin/polls';
+        // Fallback or explicit separate route
+        if($name == 'admin.polls.create') return '/admin'; 
+        
+        // Handle parameters for dynamic routes
+        if($name == 'admin.votes.show') {
+            $id = $params[0] ?? $params['id'] ?? 1;
+            return "/admin/polls/$id/votes";
+        }
+        if($name == 'admin.polls.toggle') {
+            $id = $params[0] ?? $params['id'] ?? 1;
+            return "/admin/polls/$id/toggle";
+        }
+        if($name == 'admin.polls.delete') {
+            $id = $params[0] ?? $params['id'] ?? 1;
+            return "/admin/polls/$id/delete";
+        }
+        
         return '/#route-'.$name; 
     }
 }

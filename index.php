@@ -56,6 +56,10 @@ $response = $kernel->handle(
     $request = Request::capture()
 );
 
-$response->send();
+if (is_object($response) && method_exists($response, 'send')) {
+    $response->send();
+} elseif (is_string($response)) {
+    echo $response;
+}
 
 $kernel->terminate($request, $response);

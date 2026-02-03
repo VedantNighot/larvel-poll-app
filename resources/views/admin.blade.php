@@ -12,12 +12,31 @@
             <!-- Ideally fetch from DB, but for now we link to specific ones or assume logic -->
             <!-- In a real app we'd pass $polls to this view -->
             @if(isset($polls))
-                @foreach($polls as $poll)
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    {{ $poll->question }}
-                    <a href="{{ route('admin.votes.show', $poll->id) }}" class="btn btn-sm btn-info">Manage IPs / Votes</a>
-                </li>
-                @endforeach
+            <div class="list-group">
+            @foreach($polls as $poll)
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-1">{{ $poll->question }}</h5>
+                        <small class="text-muted">ID: {{ $poll->id }} | Active: {{ $poll->is_active ? 'Yes' : 'No' }}</small>
+                    </div>
+                    <div>
+                        <a href="{{ route('admin.votes.show', ['id' => $poll->id]) }}" class="btn btn-sm btn-info text-white">Manage Votes</a>
+                        
+                        <form action="{{ route('admin.polls.toggle', ['id' => $poll->id]) }}" method="POST" class="d-inline">
+                            @csrf
+                            <button type="submit" class="btn btn-sm {{ $poll->is_active ? 'btn-warning' : 'btn-success' }}">
+                                {{ $poll->is_active ? 'Close' : 'Open' }}
+                            </button>
+                        </form>
+
+                        <form action="{{ route('admin.polls.delete', ['id' => $poll->id]) }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure?');">
+                            @csrf
+                            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                        </form>
+                    </div>
+                </div>
+            @endforeach
+        </div>
             @endif
         </ul>
 

@@ -19,34 +19,64 @@ $(document).ready(function () {
             url: '/polls/' + id + '/options',
             type: 'GET',
             success: function (response) {
+                // Handle text response that might contain Fatal Error (PHP Dump)
+                if (typeof response === 'string') {
+                    // Try to parse JSON manually if it's a string
+                    try {
+                        response = JSON.parse(response);
+                    } catch (e) {
+                        $('#poll-content').html('<div class="alert alert-danger">Server Error: ' + response + '</div>');
+                        return;
+                    }
+                }
+
                 if (response.status === 'success') {
                     renderPoll(response.poll, response.options);
+                } else {
+                    $('#poll-content').html('<div class="alert alert-warning">Error: ' + (response.message || 'Unknown error') + '</div>');
                 }
             },
-            error: function () {
-                $('#poll-content').html('<p class="text-danger">Failed to load poll.</p>');
+            error: function (xhr, status, error) {
+                console.error("AJAX Error:", status, error);
+                console.log(xhr.responseText);
+                $('#poll-content').html('<div class="alert alert-danger">Failed to load poll. Status: ' + xhr.status + '</div>');
             }
         });
     }
 
     function renderPoll(poll, options) {
-        $('#poll-title').text(poll.question);
+        try {
+            $('#poll-title').text(poll.question);
 
-        let html = '<form id="vote-form" data-id="' + poll.id + '">';
-        options.forEach(function (opt) {
-            html += `
-                <div class="form-check mb-2">
-                    <input class="form-check-input" type="radio" name="option_id" id="opt-${opt.id}" value="${opt.id}">
-                    <label class="form-check-label" for="opt-${opt.id}">
-                        ${opt.option_text}
-                    </label>
-                </div>
-            `;
-        });
-        html += '<button type="submit" class="btn btn-primary mt-3">Vote</button>';
-        html += '</form>';
+            // Safety: Ensure options is an array
+            if (!Array.isArray(options)) {
+                // Try converting object to array
+                options = Object.values(options);
+            }
 
-        $('#poll-content').html(html);
+            let html = '<form id="vote-form" data-id="' + poll.id + '">';
+            if (options.length === 0) {
+                html += '<p class="text-warning">No options found for this poll.</p>';
+            } else {
+                options.forEach(function (opt) {
+                    html += `
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="option_id" id="opt-${opt.id}" value="${opt.id}">
+                            <label class="form-check-label" for="opt-${opt.id}">
+                                ${opt.option_text}
+                            </label>
+                        </div>
+                    `;
+                });
+                html += '<button type="submit" class="btn btn-primary mt-3">Vote</button>';
+            }
+            html += '</form>';
+
+            $('#poll-content').html(html);
+        } catch (e) {
+            console.error(e);
+            $('#poll-content').html('<div class="alert alert-danger">JS Error: ' + e.message + '</div>');
+        }
     }
 
     // Vote Submission logic
