@@ -98,3 +98,24 @@ if (!function_exists('csrf_token')) {
 if (!function_exists('csrf_field')) {
     function csrf_field() { return '<input type="hidden" name="_token" value="mock-csrf-token">'; }
 }
+
+if (!function_exists('session')) {
+    function session($key = null, $default = null) {
+        if (session_status() === PHP_SESSION_NONE) session_start();
+        
+        if (is_null($key)) return null;
+        
+        if (is_array($key)) {
+            foreach($key as $k => $v) {
+                $_SESSION[$k] = $v;
+            }
+            return;
+        }
+        
+        $val = $_SESSION[$key] ?? $default;
+        // Clear flash messages after read (simple simulation)
+        if($key == 'error' || $key == 'success') unset($_SESSION[$key]);
+        
+        return $val;
+    }
+}

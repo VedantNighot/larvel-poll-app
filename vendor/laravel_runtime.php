@@ -22,17 +22,36 @@ class ResponseFactory {
 namespace Illuminate\Routing;
 
 class Redirector {
+    protected $targetUrl;
+
     public function route($name) { 
-        // Rudimentary mapping
         $url = '/';
         if(strpos($name, 'index') !== false) $url = '/polls';
         if(strpos($name, 'login') !== false) $url = '/login';
-        header("Location: $url"); 
-        exit; 
+        $this->targetUrl = $url;
+        return $this;
     }
+    
     public function to($path) {
-        header("Location: $path");
-        exit;
+        $this->targetUrl = $path;
+        return $this;
+    }
+
+    public function back() {
+        $this->targetUrl = $_SERVER['HTTP_REFERER'] ?? '/login';
+        return $this;
+    }
+
+    public function with($key, $value) {
+        $_SESSION[$key] = $value;
+        return $this;
+    }
+
+    public function __destruct() {
+        if ($this->targetUrl && !headers_sent()) {
+            header("Location: " . $this->targetUrl);
+            exit;
+        }
     }
 }
 
