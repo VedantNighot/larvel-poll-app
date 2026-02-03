@@ -52,6 +52,46 @@ if (!function_exists('route')) {
 if (!function_exists('asset')) {
     function asset($path) { return '/' . ltrim($path, '/'); }
 }
+if (!function_exists('env')) {
+    function env($key, $default = null) {
+        // Simple .env parser (Lazy load)
+        static $loaded = false;
+        static $vars = [];
+        
+        if (!$loaded) {
+            $path = __DIR__ . '/../.env';
+            if (file_exists($path)) {
+                $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                foreach ($lines as $line) {
+                    if (strpos(trim($line), '#') === 0) continue;
+                    if (strpos($line, '=') !== false) {
+                        list($k, $v) = explode('=', $line, 2);
+                        $k = trim($k);
+                        $v = trim($v);
+                        // Remove quotes if present
+                        if(substr($v, 0, 1) === '"' && substr($v, -1) === '"') $v = substr($v, 1, -1);
+                        $vars[$k] = $v;
+                        $_ENV[$k] = $v;
+                        $_SERVER[$k] = $v;
+                    }
+                }
+            }
+            $loaded = true;
+        }
+        
+        $value = $vars[$key] ?? $_ENV[$key] ?? $_SERVER[$key] ?? getenv($key);
+        
+        if ($value === false) return $default;
+        if ($value === null) return $default;
+        
+        // Handle booleans
+        if (strtolower($value) === 'true') return true;
+        if (strtolower($value) === 'false') return false;
+        
+        return $value;
+    }
+}
+
 if (!function_exists('csrf_token')) {
     function csrf_token() { return 'mock-csrf-token'; }
 }
